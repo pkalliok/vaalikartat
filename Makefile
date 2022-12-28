@@ -8,7 +8,7 @@ test:
 	@echo "Boom!  You've been tested."
 
 stamps/prereq:
-	sudo apt install podman-docker docker-compose
+	sudo apt install podman-docker docker-compose sql-migrate curl
 	systemctl --user enable podman.socket
 	systemctl --user start podman.socket
 	touch $@

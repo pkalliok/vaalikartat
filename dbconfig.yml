@@ -1,0 +1,6 @@
+---
+development:
+  dialect: postgres
+  datasource: host=localhost port=15432 dbname=vaalidata user=postgres password=devenvpgpassword sslmode=disable
+  dir: migrations
+  table: sqlmigrate_migrations
