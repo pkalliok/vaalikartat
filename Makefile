@@ -8,7 +8,7 @@ test:
 	@echo "Boom!  You've been tested."
 
 stamps/prereq:
-	sudo apt install podman-docker docker-compose sql-migrate curl
+	sudo apt install podman-docker docker-compose sql-migrate
 	systemctl --user enable podman.socket
 	systemctl --user start podman.socket
 	touch $@
@@ -22,6 +22,25 @@ stamps/database: stamps/prereq
 stamps/dev-env: stamps/prereq stamps/database
 	$(DC) up -d
 	touch $@
+
+stamps/data-prereq:
+	sudo apt install curl csvkit unzip iconv mawk
+	touch $@
+
+data/ekv-2019_ehd_maa.csv.zip: stamps/data-prereq
+	curl https://tulospalvelu.vaalit.fi/EKV-2019/ekv-2019_ehd_maa.csv.zip > $@
+
+data/ekv-2019_votes.csv: data/ekv-2019_ehd_maa.csv.zip stamps/data-prereq
+	unzip -p $< ekv-2019_teat_maa.csv | iconv -f latin1 -t utf8 > $@
+
+data/ekv-2019_areas.csv: data/ekv-2019_votes.csv scripts/get_areas.sh stamps/data-prereq
+	bash ./scripts/get_areas.sh $< > $@
+
+data/ekv-2019_area_candidate_votes.csv: data/ekv-2019_votes.csv scripts/get_area_candidate_votes.sh stamps/data-prereq
+	bash ./scripts/get_area_candidate_votes.sh $< > $@
+
+data/ekv-2019_candidates.csv: data/ekv-2019_votes.csv scripts/get_candidates.sh stamps/data-prereq
+	bash ./scripts/get_candidates.sh $< > $@
 
 .PHONY: stop
 stop:
