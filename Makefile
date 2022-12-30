@@ -3,12 +3,13 @@ UID = $(shell id -u)
 export DOCKER_HOST = unix:///run/user/$(UID)/podman/podman.sock
 DC = docker-compose -f hasura-docker-compose.yml
 PG_COMMAND = $(DC) exec postgres
+PSQL = psql "$(shell bash ./scripts/get_connection_params.sh development)"
 
 test:
 	@echo "Boom!  You've been tested."
 
 stamps/prereq:
-	sudo apt install podman-docker docker-compose sql-migrate
+	sudo apt install podman-docker docker-compose sql-migrate postgresql-client
 	systemctl --user enable podman.socket
 	systemctl --user start podman.socket
 	touch $@
@@ -19,7 +20,18 @@ stamps/database: stamps/prereq
 	-$(PG_COMMAND) createdb -U postgres vaalidata
 	touch $@
 
-stamps/dev-env: stamps/prereq stamps/database
+stamps/database-schema: stamps/database stamps/prereq
+	sql-migrate up
+	touch $@
+
+stamps/database-data: stamps/database-schema stamps/prereq \
+		data/ekv-2019_areas.csv \
+		data/ekv-2019_candidates.csv \
+		data/ekv-2019_area_candidate_votes.csv
+	$(PSQL) -f ./scripts/ekv-2019_import.psql
+	touch $@
+
+stamps/dev-env: stamps/prereq stamps/database-data
 	$(DC) up -d
 	touch $@
 

@@ -1,0 +1,4 @@
+\copy area from './data/ekv-2019_areas.csv' delimiter ';' CSV HEADER
+\copy candidate from './data/ekv-2019_candidates.csv' delimiter ';' CSV HEADER
+\copy area_candidate_votes from './data/ekv-2019_area_candidate_votes.csv' delimiter ';' CSV HEADER
+
