@@ -24,7 +24,7 @@ stamps/dev-env: stamps/prereq stamps/database
 	touch $@
 
 stamps/data-prereq:
-	sudo apt install curl csvkit unzip iconv mawk
+	sudo apt install curl unzip iconv mawk # csvkit
 	touch $@
 
 data/ekv-2019_ehd_maa.csv.zip: stamps/data-prereq
