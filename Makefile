@@ -31,8 +31,12 @@ stamps/database-data: stamps/database-schema stamps/prereq \
 	$(PSQL) -f ./scripts/ekv-2019_import.psql
 	touch $@
 
-stamps/dev-env: stamps/prereq stamps/database-data
+stamps/graphql: stamps/database-data stamps/prereq
 	$(DC) up -d
+	touch $@
+
+stamps/dev-env: hasura_metadata.json stamps/graphql stamps/data-prereq
+	curl -d '{"type":"replace_metadata","args":'"$$(cat $<)"'}' http://localhost:18080/v1/metadata
 	touch $@
 
 stamps/data-prereq:

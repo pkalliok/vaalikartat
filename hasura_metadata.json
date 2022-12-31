@@ -1,0 +1,92 @@
+{
+    "version": 3,
+    "sources": [
+      {
+        "name": "vaalidata",
+        "kind": "postgres",
+        "tables": [
+          {
+            "table": {
+              "name": "area",
+              "schema": "public"
+            },
+            "object_relationships": [
+              {
+                "name": "part_of_area",
+                "using": {
+                  "foreign_key_constraint_on": "part_of_area_id"
+                }
+              }
+            ],
+            "array_relationships": [
+              {
+                "name": "candidate_votes",
+                "using": {
+                  "foreign_key_constraint_on": {
+                    "column": "area_id",
+                    "table": {
+                      "name": "area_candidate_votes",
+                      "schema": "public"
+                    }
+                  }
+                }
+              },
+              {
+                "name": "part_areas",
+                "using": {
+                  "foreign_key_constraint_on": {
+                    "column": "part_of_area_id",
+                    "table": {
+                      "name": "area",
+                      "schema": "public"
+                    }
+                  }
+                }
+              }
+            ]
+          },
+          {
+            "table": {
+              "name": "area_candidate_votes",
+              "schema": "public"
+            },
+            "object_relationships": [
+              {
+                "name": "area",
+                "using": {
+                  "foreign_key_constraint_on": "area_id"
+                }
+              },
+              {
+                "name": "candidate",
+                "using": {
+                  "foreign_key_constraint_on": "candidate_id"
+                }
+              }
+            ]
+          },
+          {
+            "table": {
+              "name": "candidate",
+              "schema": "public"
+            },
+            "array_relationships": [
+              {
+                "name": "area_votes",
+                "using": {
+                  "foreign_key_constraint_on": {
+                    "column": "candidate_id",
+                    "table": {
+                      "name": "area_candidate_votes",
+                      "schema": "public"
+                    }
+                  }
+                }
+              }
+            ]
+          }
+        ],
+	"configuration":{"connection_info":{"database_url":"postgresql://postgres:devenvpgpassword@postgres/vaalidata","isolation_level":"read-committed","use_prepared_statements":false}}
+      }
+    ]
+}
