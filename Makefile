@@ -33,6 +33,10 @@ stamps/database-data: stamps/database-schema stamps/prereq \
 
 stamps/graphql: stamps/database-data stamps/prereq
 	$(DC) up -d
+	until curl -s -o /dev/null http://localhost:18080; do \
+		echo "Waiting for Hasura to come up..."; \
+		sleep 1; \
+	done
 	touch $@
 
 stamps/dev-env: hasura_metadata.json stamps/graphql stamps/data-prereq
