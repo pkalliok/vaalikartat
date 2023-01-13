@@ -55,16 +55,28 @@ stamps/deploy-prereq:
 
 stamps/gcloud-setup: stamps/deploy-prereq
 	test -f $(HOME)/.config/gcloud/active_config || gcloud init
-	touch $@
-
-stamps/gcp-setup: stamps/gcloud-setup
 	gcloud services enable sqladmin.googleapis.com
 	touch $@
 
-stamps/deploy-database: stamps/gcp-setup
-	gcloud sql instances list | grep -q hasura-pg \
+config/database-password%:
+	head -c 20 /dev/urandom | base64 > $@
+
+stamps/deploy-database: config/database-password stamps/gcloud-setup \
+		config/database-password-hasura config/database-password-import
+	gcloud sql instances list --format='csv(name)' | grep -q hasura-pg \
 	|| gcloud sql instances create hasura-pg --region europe-north1 \
-		--database-version POSTGRES_13 --cpu 1 --memory 3840MiB
+		--database-version POSTGRES_13 --cpu 1 --memory 3840MiB \
+		--root-password $$(cat $<)
+	gcloud sql users create hasura --instance hasura-pg \
+		--password $$(cat config/database-password-hasura)
+	gcloud sql users create vdimport --instance hasura-pg \
+		--password $$(cat config/database-password-import)
+	gcloud sql databases list --format='csv(name)' --instance hasura-pg \
+	| grep -q hasura \
+	|| gcloud sql databases create hasura --instance hasura-pg
+	gcloud sql databases list --format='csv(name)' --instance hasura-pg \
+	| grep -q vaalidata \
+	|| gcloud sql databases create vaalidata --instance hasura-pg
 	touch $@
 
 stamps/data-prereq:
