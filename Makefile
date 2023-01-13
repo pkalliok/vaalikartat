@@ -39,7 +39,7 @@ stamps/graphql: stamps/database-data stamps/prereq
 	done
 	touch $@
 
-stamps/dev-env: hasura_metadata.json stamps/graphql stamps/data-prereq
+stamps/dev-env: config/hasura_metadata.json stamps/graphql stamps/data-prereq
 	curl -d '{"type":"replace_metadata","args":'"$$(cat $<)"'}' http://localhost:18080/v1/metadata
 	touch $@
 
