@@ -100,3 +100,7 @@ clean-dev-env: stop
 logs:
 	$(DC) logs -f
 
+.PHONY: psql
+psql: stamps/database
+	$(PSQL)
+
