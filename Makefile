@@ -43,6 +43,30 @@ stamps/dev-env: hasura_metadata.json stamps/graphql stamps/data-prereq
 	curl -d '{"type":"replace_metadata","args":'"$$(cat $<)"'}' http://localhost:18080/v1/metadata
 	touch $@
 
+stamps/deploy-prereq:
+	sudo apt install apt-transport-https ca-certificates gnupg
+	echo "deb [signed-by=/usr/share/keyrings/cloud.google.gpg] https://packages.cloud.google.com/apt cloud-sdk main" \
+	| sudo tee -a /etc/apt/sources.list.d/google-cloud-sdk.list
+	curl https://packages.cloud.google.com/apt/doc/apt-key.gpg \
+	| sudo apt-key --keyring /usr/share/keyrings/cloud.google.gpg add -
+	sudo apt-get update
+	sudo apt-get install google-cloud-cli
+	touch $@
+
+stamps/gcloud-setup: stamps/deploy-prereq
+	test -f $(HOME)/.config/gcloud/active_config || gcloud init
+	touch $@
+
+stamps/gcp-setup: stamps/gcloud-setup
+	gcloud services enable sqladmin.googleapis.com
+	touch $@
+
+stamps/deploy-database: stamps/gcp-setup
+	gcloud sql instances list | grep -q hasura-pg \
+	|| gcloud sql instances create hasura-pg --region europe-north1 \
+		--database-version POSTGRES_13 --cpu 1 --memory 3840MiB
+	touch $@
+
 stamps/data-prereq:
 	sudo apt install curl unzip iconv mawk # csvkit
 	touch $@
