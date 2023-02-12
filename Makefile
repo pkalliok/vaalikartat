@@ -4,6 +4,8 @@ export DOCKER_HOST = unix:///run/user/$(UID)/podman/podman.sock
 DC = docker-compose -f hasura-docker-compose.yml
 PG_COMMAND = $(DC) exec postgres
 PSQL = psql "$(shell bash ./scripts/get_connection_params.sh development)"
+GCP_PROJ = $(shell gcloud config get-value project)
+GCP_SA = terraform-sa@$(GCP_PROJ).iam.gserviceaccount.com
 
 test:
 	@echo "Boom!  You've been tested."
@@ -44,19 +46,32 @@ stamps/dev-env: config/hasura_metadata.json stamps/graphql stamps/data-prereq
 	touch $@
 
 stamps/deploy-prereq:
-	sudo apt install apt-transport-https ca-certificates gnupg
-	echo "deb [signed-by=/usr/share/keyrings/cloud.google.gpg] https://packages.cloud.google.com/apt cloud-sdk main" \
-	| sudo tee -a /etc/apt/sources.list.d/google-cloud-sdk.list
+	sudo apt install apt-transport-https ca-certificates gnupg curl
 	curl https://packages.cloud.google.com/apt/doc/apt-key.gpg \
 	| sudo apt-key --keyring /usr/share/keyrings/cloud.google.gpg add -
+	curl https://apt.releases.hashicorp.com/gpg | gpg --dearmor \
+	| sudo tee /usr/share/keyrings/hashicorp-archive-keyring.gpg >/dev/null
+	echo "deb [signed-by=/usr/share/keyrings/cloud.google.gpg] https://packages.cloud.google.com/apt cloud-sdk main" \
+	| sudo tee /etc/apt/sources.list.d/google-cloud-sdk.list
+	echo "deb [signed-by=/usr/share/keyrings/hashicorp-archive-keyring.gpg] https://apt.releases.hashicorp.com $$(lsb_release -cs) main" \
+	| sudo tee /etc/apt/sources.list.d/hashicorp.list
 	sudo apt-get update
-	sudo apt-get install google-cloud-cli
+	sudo apt-get install google-cloud-cli terraform
 	touch $@
 
 stamps/gcloud-setup: stamps/deploy-prereq
 	test -f $(HOME)/.config/gcloud/active_config || gcloud init
-	gcloud services enable sqladmin.googleapis.com
+	gcloud services enable sqladmin.googleapis.com iam.googleapis.com
+	gcloud iam service-accounts list --format 'csv(email)' \
+	| grep -q terraform-sa@ \
+	|| gcloud iam service-accounts create terraform-sa \
+		--display-name 'Terraform Service Account'
+	gcloud projects add-iam-policy-binding $(GCP_PROJ) \
+		--role roles/editor --member 'serviceAccount:$(GCP_SA)'
 	touch $@
+
+gcloud-credentials.json: stamps/gcloud-setup
+	gcloud iam service-accounts keys create $@ --iam-account '$(GCP_SA)'
 
 config/database-password%:
 	head -c 20 /dev/urandom | base64 > $@

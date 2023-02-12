@@ -1,3 +1,4 @@
 /stamps
 /data
 /config/*password*
+/gcloud-credentials.json
