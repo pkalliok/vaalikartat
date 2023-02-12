@@ -6,6 +6,7 @@ PG_COMMAND = $(DC) exec postgres
 PSQL = psql "$(shell bash ./scripts/get_connection_params.sh development)"
 GCP_PROJ = $(shell gcloud config get-value project)
 GCP_SA = terraform-sa@$(GCP_PROJ).iam.gserviceaccount.com
+TF = terraform -chdir=gcp-deploy
 
 test:
 	@echo "Boom!  You've been tested."
@@ -61,17 +62,34 @@ stamps/deploy-prereq:
 
 stamps/gcloud-setup: stamps/deploy-prereq
 	test -f $(HOME)/.config/gcloud/active_config || gcloud init
-	gcloud services enable sqladmin.googleapis.com iam.googleapis.com
+	gcloud services enable sqladmin.googleapis.com iam.googleapis.com \
+		compute.googleapis.com servicenetworking.googleapis.com \
+		cloudresourcemanager.googleapis.com
 	gcloud iam service-accounts list --format 'csv(email)' \
 	| grep -q terraform-sa@ \
 	|| gcloud iam service-accounts create terraform-sa \
 		--display-name 'Terraform Service Account'
 	gcloud projects add-iam-policy-binding $(GCP_PROJ) \
 		--role roles/editor --member 'serviceAccount:$(GCP_SA)'
+	gcloud projects add-iam-policy-binding $(GCP_PROJ) \
+		--role roles/compute.networkAdmin \
+		--member 'serviceAccount:$(GCP_SA)'
 	touch $@
 
 gcp-deploy/gcloud-credentials.json: stamps/gcloud-setup
 	gcloud iam service-accounts keys create $@ --iam-account '$(GCP_SA)'
+
+gcp-deploy/gcloud.auto.tfvars: stamps/gcloud-setup
+	echo 'gcp_project = "$(GCP_PROJ)"' > $@
+
+stamps/terraform-setup: gcp-deploy/main.tf \
+	  gcp-deploy/gcloud-credentials.json gcp-deploy/gcloud.auto.tfvars
+	$(TF) init
+	touch $@
+
+stamps/gcp-database: $(wildcard gcp-deploy/*.tf) stamps/terraform-setup
+	$(TF) apply -target=google_sql_database_instance.hasura-pg
+	touch $@
 
 config/database-password%:
 	head -c 20 /dev/urandom | base64 > $@
