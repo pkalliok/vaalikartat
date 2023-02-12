@@ -1,4 +1,4 @@
 /stamps
 /data
 /config/*password*
-/gcloud-credentials.json
+/gcp-deploy/gcloud-credentials.json

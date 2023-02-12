@@ -70,7 +70,7 @@ stamps/gcloud-setup: stamps/deploy-prereq
 		--role roles/editor --member 'serviceAccount:$(GCP_SA)'
 	touch $@
 
-gcloud-credentials.json: stamps/gcloud-setup
+gcp-deploy/gcloud-credentials.json: stamps/gcloud-setup
 	gcloud iam service-accounts keys create $@ --iam-account '$(GCP_SA)'
 
 config/database-password%:
