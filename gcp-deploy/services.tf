@@ -26,3 +26,9 @@ resource "google_sql_database_instance" "hasura-pg" {
     }
   }
 }
+
+resource "google_sql_user" "hasura-pg-root" {
+  name     = "root"
+  instance = google_sql_database_instance.hasura-pg.name
+  password = var.root_database_password
+}

@@ -79,20 +79,21 @@ stamps/gcloud-setup: stamps/deploy-prereq
 gcp-deploy/gcloud-credentials.json: stamps/gcloud-setup
 	gcloud iam service-accounts keys create $@ --iam-account '$(GCP_SA)'
 
-gcp-deploy/gcloud.auto.tfvars: stamps/gcloud-setup
+gcp-deploy/gcloud.auto.tfvars: config/database-password-root stamps/gcloud-setup
 	echo 'gcp_project = "$(GCP_PROJ)"' > $@
+	sed 's/.*/root_database_password = "&"/' $< >> $@
 
 stamps/terraform-setup: gcp-deploy/main.tf \
 	  gcp-deploy/gcloud-credentials.json gcp-deploy/gcloud.auto.tfvars
 	$(TF) init
 	touch $@
 
-stamps/gcp-database: $(wildcard gcp-deploy/*.tf) stamps/terraform-setup
-	$(TF) apply -target=google_sql_database_instance.hasura-pg
-	touch $@
-
 config/database-password%:
 	head -c 20 /dev/urandom | base64 > $@
+
+stamps/gcp-database: $(wildcard gcp-deploy/*.tf) stamps/terraform-setup
+	$(TF) apply -target=google_sql_user.hasura-pg-root
+	touch $@
 
 stamps/deploy-database: config/database-password stamps/gcloud-setup \
 		config/database-password-hasura config/database-password-import
