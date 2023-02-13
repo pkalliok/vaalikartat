@@ -10,8 +10,8 @@ terraform {
 provider "google" {
   credentials = file("gcloud-credentials.json")
   project     = var.gcp_project
-  region      = "europe-west1"
-  zone        = "europe-west1-c"
+  region      = var.gcp_region
+  zone        = "${var.gcp_region}-c"
 }
 
 resource "google_compute_network" "vpc_network" {

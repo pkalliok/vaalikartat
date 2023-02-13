@@ -7,6 +7,8 @@ PSQL = psql "$(shell bash ./scripts/get_connection_params.sh development)"
 GCP_PROJ = $(shell gcloud config get-value project)
 GCP_SA = terraform-sa@$(GCP_PROJ).iam.gserviceaccount.com
 TF = terraform -chdir=gcp-deploy
+HASURA_IMAGE = $(shell grep image:.*hasura hasura-docker-compose.yml | grep -o 'docker.io/[^ ]*')
+GCR_HASURA_IMAGE = $(HASURA_IMAGE:docker.io/hasura/%=eu.gcr.io/$(GCP_PROJ)/%)
 
 test:
 	@echo "Boom!  You've been tested."
@@ -64,7 +66,8 @@ stamps/gcloud-setup: stamps/deploy-prereq
 	test -f $(HOME)/.config/gcloud/active_config || gcloud init
 	gcloud services enable sqladmin.googleapis.com iam.googleapis.com \
 		compute.googleapis.com servicenetworking.googleapis.com \
-		cloudresourcemanager.googleapis.com
+		cloudresourcemanager.googleapis.com vpcaccess.googleapis.com \
+		containerregistry.googleapis.com run.googleapis.com
 	gcloud iam service-accounts list --format 'csv(email)' \
 	| grep -q terraform-sa@ \
 	|| gcloud iam service-accounts create terraform-sa \
@@ -82,6 +85,7 @@ gcp-deploy/gcloud-credentials.json: stamps/gcloud-setup
 gcp-deploy/gcloud.auto.tfvars: config/database-password-root stamps/gcloud-setup
 	echo 'gcp_project = "$(GCP_PROJ)"' > $@
 	sed 's/.*/root_database_password = "&"/' $< >> $@
+	echo 'hasura_image = "$(GCR_HASURA_IMAGE)"' >> $@
 
 stamps/terraform-setup: gcp-deploy/main.tf \
 	  gcp-deploy/gcloud-credentials.json gcp-deploy/gcloud.auto.tfvars
@@ -93,6 +97,21 @@ config/database-password%:
 
 stamps/gcp-database: $(wildcard gcp-deploy/*.tf) stamps/terraform-setup
 	$(TF) apply -target=google_sql_user.hasura-pg-root
+	touch $@
+
+stamps/gcr-setup: stamps/gcloud-setup
+	gcloud auth configure-docker
+	touch $@
+
+stamps/gcp-hasura-image: stamps/gcr-setup
+	podman pull $(HASURA_IMAGE)
+	podman tag $(HASURA_IMAGE) $(GCR_HASURA_IMAGE)
+	podman push $(GCR_HASURA_IMAGE)
+	touch $@
+
+stamps/gcp-deploy: $(wildcard gcp-deploy/*.tf) \
+		stamps/terraform-setup stamps/gcp-hasura-image
+	$(TF) apply
 	touch $@
 
 stamps/deploy-database: config/database-password stamps/gcloud-setup \
