@@ -83,24 +83,12 @@ stamps/gcloud-setup: stamps/deploy-prereq
 	gcloud projects add-iam-policy-binding $(GCP_PROJ) \
 		--role projects/$(GCP_PROJ)/roles/terraformExtras \
 		--member 'serviceAccount:$(GCP_SA)'
-	gcloud iam service-accounts list --format 'value(email)' \
-	| grep -q sql-connection-1@ \
-	|| gcloud iam service-accounts create sql-connection-1 \
-		--display-name 'Local development SQL connection SA'
-	gcloud projects add-iam-policy-binding $(GCP_PROJ) \
-		--role roles/cloudsql.client \
-		--member 'serviceAccount:sql-connection-1@$(GCP_PROJ).iam.gserviceaccount.com'
 	touch $@
-
-gcp-deploy/sql-credentials.json: stamps/gcloud-setup
-	test -f $@ \
-	|| gcloud iam service-accounts keys create $@ \
-		--iam-account 'sql-connection-1@$(GCP_PROJ).iam.gserviceaccount.com'
-	chmod a+r $@  # because it needs to be mounted to sql-auth-proxy cont
 
 gcp-deploy/gcloud-credentials.json: stamps/gcloud-setup
 	test -f $@ \
 	|| gcloud iam service-accounts keys create $@ --iam-account '$(GCP_SA)'
+	touch $@
 
 gcp-deploy/gcloud.auto.tfvars: config/database-password-root stamps/gcloud-setup
 	echo 'gcp_project = "$(GCP_PROJ)"' > $@
@@ -113,6 +101,20 @@ stamps/terraform-setup: gcp-deploy/main.tf \
 
 stamps/gcp-database: $(wildcard gcp-deploy/*.tf) stamps/terraform-setup
 	$(TF) apply -target=google_sql_user.hasura-pg-root
+	touch $@
+
+gcp-deploy/sql-credentials.json: stamps/gcp-database
+	gcloud iam service-accounts list --format 'value(email)' \
+	| grep -q sql-connection-1@ \
+	|| gcloud iam service-accounts create sql-connection-1 \
+		--display-name 'Local development SQL connection SA'
+	gcloud projects add-iam-policy-binding $(GCP_PROJ) \
+		--role roles/cloudsql.client \
+		--member 'serviceAccount:sql-connection-1@$(GCP_PROJ).iam.gserviceaccount.com'
+	test -f $@ \
+	|| gcloud iam service-accounts keys create $@ \
+		--iam-account 'sql-connection-1@$(GCP_PROJ).iam.gserviceaccount.com'
+	chmod a+r $@  # because it needs to be mounted to sql-auth-proxy cont
 	touch $@
 
 stamps/gcr-setup: stamps/gcloud-setup
@@ -173,8 +175,10 @@ data/ekv-2019_candidates.csv: data/ekv-2019_votes.csv scripts/get_candidates.sh 
 .PHONY: stop
 stop:
 	$(DC) stop
+	podman rm -f vaalikartat_sql_auth_proxy
 	-rm stamps/dev-env
 	-rm stamps/database
+	-rm stamps/sql-auth-proxy-running
 
 .PHONY: clean-dev-env
 clean-dev-env: stop
@@ -187,4 +191,25 @@ logs:
 .PHONY: psql
 psql: stamps/database
 	$(PSQL)
+
+gcp-deploy/sockets:
+	mkdir -p $@
+	chmod a+rwxt $@
+
+stamps/sql-auth-proxy-running: gcp-deploy/sql-credentials.json \
+		gcp-deploy/sockets stamps/gcp-database
+	podman run -d --name vaalikartat_sql_auth_proxy \
+		-v $(CURDIR)/gcp-deploy/sockets:/cloudsql \
+		-v $(CURDIR)/$<:/tmp/sql-credentials.json \
+		gcr.io/cloud-sql-connectors/cloud-sql-proxy:2.0.0 \
+		--unix-socket /cloudsql \
+		--credentials-file /tmp/sql-credentials.json \
+		$$($(TF) output --raw hasura_pg_connection) \
+	> $@
+
+
+.PHONY: gcp-psql
+gcp-psql: stamps/sql-auth-proxy-running
+	PGPASSWORD=$$($(TF) output --raw hasura_pg_root_password) \
+	psql -U root -h $(CURDIR)/gcp-deploy/sockets/$$($(TF) output --raw hasura_pg_connection) hasura
 
