@@ -5,7 +5,7 @@ DC = docker-compose -f hasura-docker-compose.yml
 PG_COMMAND = $(DC) exec postgres
 PSQL = psql "$(shell bash ./scripts/get_connection_params.sh development)"
 GCP_PROJ = $(shell gcloud config get-value project)
-GCP_SA = terraform-sa@$(GCP_PROJ).iam.gserviceaccount.com
+GCP_SA = terraform-sa-1@$(GCP_PROJ).iam.gserviceaccount.com
 TF = terraform -chdir=gcp-deploy
 HASURA_IMAGE = $(shell grep image:.*hasura hasura-docker-compose.yml | grep -o 'docker.io/[^ ]*')
 GCR_HASURA_IMAGE = $(HASURA_IMAGE:docker.io/hasura/%=eu.gcr.io/$(GCP_PROJ)/%)
@@ -68,19 +68,35 @@ stamps/gcloud-setup: stamps/deploy-prereq
 		compute.googleapis.com servicenetworking.googleapis.com \
 		cloudresourcemanager.googleapis.com vpcaccess.googleapis.com \
 		containerregistry.googleapis.com run.googleapis.com
-	gcloud iam service-accounts list --format 'csv(email)' \
-	| grep -q terraform-sa@ \
-	|| gcloud iam service-accounts create terraform-sa \
+	gcloud iam service-accounts list --format 'value(email)' \
+	| grep -q terraform-sa-1@ \
+	|| gcloud iam service-accounts create terraform-sa-1 \
 		--display-name 'Terraform Service Account'
 	gcloud projects add-iam-policy-binding $(GCP_PROJ) \
 		--role roles/editor --member 'serviceAccount:$(GCP_SA)'
+	gcloud iam roles list --project $(GCP_PROJ) --format 'value(name)' \
+	| grep -q terraformExtras \
+	|| gcloud iam roles create terraformExtras --project $(GCP_PROJ)
+	gcloud iam roles update terraformExtras --project $(GCP_PROJ) \
+		--description 'Extra permissions needed by Terraform' \
+		--permissions resourcemanager.projects.setIamPolicy,run.services.setIamPolicy
 	gcloud projects add-iam-policy-binding $(GCP_PROJ) \
-		--role roles/compute.networkAdmin \
+		--role projects/$(GCP_PROJ)/roles/terraformExtras \
 		--member 'serviceAccount:$(GCP_SA)'
+	gcloud iam service-accounts list --format 'value(email)' \
+	| grep -q sql-connection-1@ \
+	|| gcloud iam service-accounts create sql-connection-1 \
+		--display-name 'Local development SQL connection SA'
 	gcloud projects add-iam-policy-binding $(GCP_PROJ) \
-		--role roles/iam.securityAdmin \
-		--member 'serviceAccount:$(GCP_SA)'
+		--role roles/cloudsql.client \
+		--member 'serviceAccount:sql-connection-1@$(GCP_PROJ).iam.gserviceaccount.com'
 	touch $@
+
+gcp-deploy/sql-credentials.json: stamps/gcloud-setup
+	test -f $@ \
+	|| gcloud iam service-accounts keys create $@ \
+		--iam-account 'sql-connection-1@$(GCP_PROJ).iam.gserviceaccount.com'
+	chmod a+r $@  # because it needs to be mounted to sql-auth-proxy cont
 
 gcp-deploy/gcloud-credentials.json: stamps/gcloud-setup
 	test -f $@ \

@@ -2,6 +2,7 @@
 /data
 /config/*password*
 /gcp-deploy/gcloud-credentials.json
+/gcp-deploy/sql-credentials.json
 /gcp-deploy/.terraform
 /gcp-deploy/gcloud.auto.tfvars
 /gcp-deploy/terraform.tfstate*

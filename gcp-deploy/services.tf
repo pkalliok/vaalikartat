@@ -1,27 +1,12 @@
 
-resource "google_compute_global_address" "private_ip_address" {
-  name          = "vpc-ip-address"
-  purpose       = "VPC_PEERING"
-  address_type  = "INTERNAL"
-  prefix_length = 16
-  network       = google_compute_network.vpc_network.id
-}
-
-resource "google_service_networking_connection" "private_vpc_connection" {
-  network                 = google_compute_network.vpc_network.id
-  service                 = "servicenetworking.googleapis.com"
-  reserved_peering_ranges = [google_compute_global_address.private_ip_address.name]
-}
-
 resource "google_sql_database_instance" "hasura-pg" {
-  name             = "hasura-pg"
-  database_version = "POSTGRES_13"
-  depends_on       = [google_service_networking_connection.private_vpc_connection]
+  name                = "hasura-pg"
+  database_version    = "POSTGRES_13"
+  deletion_protection = false
   settings {
     tier = "db-custom-1-3840"
     ip_configuration {
-      ipv4_enabled    = true
-      private_network = google_compute_network.vpc_network.id
+      ipv4_enabled = true
     }
   }
 }
@@ -37,39 +22,39 @@ resource "google_sql_user" "hasura-pg-root" {
   password = random_password.hasura_pg_root_password.result
 }
 
-resource "google_compute_subnetwork" "hasura_connector_subnet" {
-  name          = "hasura-connector-subnet"
-  ip_cidr_range = "10.2.0.0/28"
-  network       = google_compute_network.vpc_network.id
-}
-
-resource "google_vpc_access_connector" "hasura_connector" {
-  name = "hasura-connector"
-  subnet {
-    name = google_compute_subnetwork.hasura_connector_subnet.name
-  }
-  machine_type = "f1-micro"
-}
-
 resource "random_password" "hasura_admin_key" {
   length  = 20
   special = false
 }
 
+resource "google_service_account" "hasura_cloudrun_sa" {
+  account_id = "hasura-cloudrun-sa"
+}
+
+resource "google_project_iam_binding" "allow_hasura_sql" {
+  project = var.gcp_project
+  role    = "roles/cloudsql.client"
+  members = [
+    google_service_account.hasura_cloudrun_sa.member
+  ]
+}
+
 resource "google_cloud_run_service" "hasura" {
-  name     = "hasura-service"
-  location = var.gcp_region
+  name       = "hasura-service"
+  location   = var.gcp_region
+  depends_on = [google_project_iam_binding.allow_hasura_sql]
   template {
     spec {
+      service_account_name = google_service_account.hasura_cloudrun_sa.email
       containers {
         image = var.hasura_image
         env {
           name  = "HASURA_GRAPHQL_METADATA_DATABASE_URL"
-          value = "postgres://root:${random_password.hasura_pg_root_password.result}@${google_sql_database_instance.hasura-pg.private_ip_address}:5432/hasura"
+          value = "postgres://root:${random_password.hasura_pg_root_password.result}@/hasura?host=/cloudsql/${google_sql_database_instance.hasura-pg.connection_name}"
         }
         env {
           name  = "PG_DATABASE_URL"
-          value = "postgres://root:${random_password.hasura_pg_root_password.result}@${google_sql_database_instance.hasura-pg.private_ip_address}:5432/vaalidata"
+          value = "postgres://root:${random_password.hasura_pg_root_password.result}@/vaalidata?host=/cloudsql/${google_sql_database_instance.hasura-pg.connection_name}"
         }
         env {
           name  = "HASURA_GRAPHQL_ENABLE_CONSOLE"
@@ -83,11 +68,11 @@ resource "google_cloud_run_service" "hasura" {
     }
     metadata {
       annotations = {
-        "autoscaling.knative.dev/maxScale"        = "2"
-        "run.googleapis.com/client-name"          = "terraform"
-        "run.googleapis.com/vpc-access-connector" = google_vpc_access_connector.hasura_connector.name
-        "run.googleapis.com/vpc-access-egress"    = "all-traffic"
-        # "run.googleapis.com/cloudsql-instances"   = google_sql_database_instance.hasura-pg.connection_name
+        "autoscaling.knative.dev/maxScale"      = "2"
+        "run.googleapis.com/client-name"        = "terraform"
+        "run.googleapis.com/cloudsql-instances" = google_sql_database_instance.hasura-pg.connection_name
+        # "run.googleapis.com/vpc-access-connector" = google_vpc_access_connector.hasura_connector.name
+        # "run.googleapis.com/vpc-access-egress"    = "all-traffic"
       }
     }
   }
