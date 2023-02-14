@@ -77,23 +77,23 @@ stamps/gcloud-setup: stamps/deploy-prereq
 	gcloud projects add-iam-policy-binding $(GCP_PROJ) \
 		--role roles/compute.networkAdmin \
 		--member 'serviceAccount:$(GCP_SA)'
+	gcloud projects add-iam-policy-binding $(GCP_PROJ) \
+		--role roles/iam.securityAdmin \
+		--member 'serviceAccount:$(GCP_SA)'
 	touch $@
 
 gcp-deploy/gcloud-credentials.json: stamps/gcloud-setup
-	gcloud iam service-accounts keys create $@ --iam-account '$(GCP_SA)'
+	test -f $@ \
+	|| gcloud iam service-accounts keys create $@ --iam-account '$(GCP_SA)'
 
 gcp-deploy/gcloud.auto.tfvars: config/database-password-root stamps/gcloud-setup
 	echo 'gcp_project = "$(GCP_PROJ)"' > $@
-	sed 's/.*/root_database_password = "&"/' $< >> $@
 	echo 'hasura_image = "$(GCR_HASURA_IMAGE)"' >> $@
 
 stamps/terraform-setup: gcp-deploy/main.tf \
 	  gcp-deploy/gcloud-credentials.json gcp-deploy/gcloud.auto.tfvars
 	$(TF) init
 	touch $@
-
-config/database-password%:
-	head -c 20 /dev/urandom | base64 > $@
 
 stamps/gcp-database: $(wildcard gcp-deploy/*.tf) stamps/terraform-setup
 	$(TF) apply -target=google_sql_user.hasura-pg-root
@@ -113,6 +113,9 @@ stamps/gcp-deploy: $(wildcard gcp-deploy/*.tf) \
 		stamps/terraform-setup stamps/gcp-hasura-image
 	$(TF) apply
 	touch $@
+
+config/database-password%:
+	head -c 20 /dev/urandom | base64 > $@
 
 stamps/deploy-database: config/database-password stamps/gcloud-setup \
 		config/database-password-hasura config/database-password-import
